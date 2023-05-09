@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "shotscraper-test"
+version = "0.1.0"
+description = ""
+authors = ["Daniel Bachler <daniel@danielbachler.de>"]
+readme = "README.md"
+packages = [{include = "shotscraper_test"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+shot-scraper = "^1.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

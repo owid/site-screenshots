@@ -1,0 +1,54 @@
+- url: https://ourworldindata.org/from-1-90-to-2-15-a-day-the-updated-international-poverty-line
+  output: screenshots/from-1-90-to-2-15-a-day-the-updated-international-poverty-line.png
+  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
+  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
+  # so now we scroll in 20 steps and sleep briefly in between
+  javascript: |
+    async function()
+      {
+      function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      const steps = 20;
+      for (let i = 1; i <= steps; i++) {
+        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
+        await sleep(500)
+      }
+      await sleep(20000)
+    }
+- url: https://ourworldindata.org/energy
+  output: screenshots/energy.png
+  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
+  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
+  # so now we scroll in 20 steps and sleep briefly in between
+  javascript: |
+    async function()
+      {
+      function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      const steps = 20;
+      for (let i = 1; i <= steps; i++) {
+        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
+        await sleep(500)
+      }
+      await sleep(20000)
+    }
+- url: https://ourworldindata.org/life-expectancy
+  output: screenshots/life-expectancy.png
+  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
+  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
+  # so now we scroll in 20 steps and sleep briefly in between
+  javascript: |
+    async function()
+      {
+      function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      const steps = 20;
+      for (let i = 1; i <= steps; i++) {
+        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
+        await sleep(500)
+      }
+      await sleep(20000)
+    }
