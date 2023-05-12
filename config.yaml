@@ -1,4 +1,4 @@
-- url: https://ourworldindata.org/from-1-90-to-2-15-a-day-the-updated-international-poverty-line
+- url: ${BASE_URL}/from-1-90-to-2-15-a-day-the-updated-international-poverty-line
   output: screenshots/from-1-90-to-2-15-a-day-the-updated-international-poverty-line.png
   # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
   # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
@@ -16,7 +16,7 @@
       }
       await sleep(20000)
     }
-- url: https://ourworldindata.org/energy
+- url: ${BASE_URL}/energy
   output: screenshots/energy.png
   # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
   # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
@@ -34,7 +34,7 @@
       }
       await sleep(20000)
     }
-- url: https://ourworldindata.org/life-expectancy
+- url: ${BASE_URL}/life-expectancy
   output: screenshots/life-expectancy.png
   # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
   # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events

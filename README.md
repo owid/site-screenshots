@@ -2,5 +2,13 @@ This repo is for creating and storing screenshots of a selected number of OWID p
 
 To add more screenshots, edit config.yaml and add the reference screenshot against to the screenshots directory.
 
-TODO:
-- the URLs are for now absolute URLs against prod. This should be replaced with a $BASE_URL variable that can be set from CI so we can easily run this against staging servers
+## SETUP
+
+run the following steps to install dependencies:
+
+```bash
+poetry install
+poetry run playwright install
+```
+
+then make sure to set the environment variable $BASE_URL which is used in templating the right URL into the yaml file so that the right target is used.
