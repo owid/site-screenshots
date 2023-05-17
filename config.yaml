@@ -14,6 +14,15 @@
         window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
         await sleep(500)
       }
+
+      // Pages with citation include the full URL that is different depending on the $BASE_URL
+      // so here we remove urls in the relevant sections
+      const footer = document.querySelector('footer.article-footer');
+      const regex = /https?:\/\/[^\/]+/g;
+      if (footer)
+        footer.innerHTML = footer.innerHTML.replace(regex, '');
+
+      // Sleep until everything has loaded
       await sleep(20000)
     }
 - url: ${BASE_URL}/energy
@@ -32,6 +41,15 @@
         window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
         await sleep(500)
       }
+
+      // Pages with citation include the full URL that is different depending on the $BASE_URL
+      // so here we remove urls in the relevant sections
+      const footer = document.querySelector('footer.article-footer');
+      const regex = /https?:\/\/[^\/]+/g;
+      if (footer)
+        footer.innerHTML = footer.innerHTML.replace(regex, '');
+
+      // Sleep until everything has loaded
       await sleep(20000)
     }
 - url: ${BASE_URL}/life-expectancy
@@ -50,5 +68,41 @@
         window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
         await sleep(500)
       }
+
+      // Pages with citation include the full URL that is different depending on the $BASE_URL
+      // so here we remove urls in the relevant sections
+      const footer = document.querySelector('footer.article-footer');
+      const regex = /https?:\/\/[^\/]+/g;
+      if (footer)
+        footer.innerHTML = footer.innerHTML.replace(regex, '');
+
+      // Sleep until everything has loaded
+      await sleep(20000)
+    }
+- url: ${BASE_URL}/births-and-deaths
+  output: screenshots/births-and-deaths.png
+  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
+  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
+  # so now we scroll in 20 steps and sleep briefly in between
+  javascript: |
+    async function()
+      {
+      function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      const steps = 20;
+      for (let i = 1; i <= steps; i++) {
+        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
+        await sleep(500)
+      }
+
+      // Pages with citation include the full URL that is different depending on the $BASE_URL
+      // so here we remove urls in the relevant sections
+      const footer = document.querySelector('footer.article-footer');
+      const regex = /https?:\/\/[^\/]+/g;
+      if (footer)
+        footer.innerHTML = footer.innerHTML.replace(regex, '');
+
+      // Sleep until everything has loaded
       await sleep(20000)
     }
