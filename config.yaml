@@ -1,108 +1,53 @@
 - url: ${BASE_URL}/from-1-90-to-2-15-a-day-the-updated-international-poverty-line
   output: screenshots/from-1-90-to-2-15-a-day-the-updated-international-poverty-line.png
-  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
-  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
-  # so now we scroll in 20 steps and sleep briefly in between
-  javascript: |
-    async function()
-      {
-      function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-      }
-      const steps = 20;
-      for (let i = 1; i <= steps; i++) {
-        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
-        await sleep(500)
-      }
+  javascript: &default_javascript |
+    function () {
+      return new Promise(async (resolve, reject) => {
+        function sleep(ms) {
+          return new Promise((resolve) => setTimeout(resolve, ms));
+        }
+        setTimeout(() => {
+          reject(`${window.location.href} took more than 60 seconds to scroll to the end of the page and fully load.`)
+        }, 60 * 1000)
 
-      // Pages with citation include the full URL that is different depending on the $BASE_URL
-      // so here we remove urls in the relevant sections
-      const footer = document.querySelector('footer.article-footer');
-      const regex = /https?:\/\/[^\/]+/g;
-      if (footer)
-        footer.innerHTML = footer.innerHTML.replace(regex, '');
+        let haveAllGraphersLoaded = false
+        document.addEventListener("allGraphersLoaded", () => {
+          haveAllGraphersLoaded = true
+        });
 
-      // Sleep until everything has loaded
-      await sleep(20000)
+        while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
+          window.scrollBy(0, window.innerHeight / 4);
+          await sleep(250);
+        }
+
+        while (!haveAllGraphersLoaded) {
+          await sleep(500);
+        }
+
+        resolve()
+      });
     }
+
 - url: ${BASE_URL}/energy
   output: screenshots/energy.png
-  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
-  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
-  # so now we scroll in 20 steps and sleep briefly in between
-  javascript: |
-    async function()
-      {
-      function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-      }
-      const steps = 20;
-      for (let i = 1; i <= steps; i++) {
-        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
-        await sleep(500)
-      }
+  javascript: *default_javascript
 
-      // Pages with citation include the full URL that is different depending on the $BASE_URL
-      // so here we remove urls in the relevant sections
-      const footer = document.querySelector('footer.article-footer');
-      const regex = /https?:\/\/[^\/]+/g;
-      if (footer)
-        footer.innerHTML = footer.innerHTML.replace(regex, '');
-
-      // Sleep until everything has loaded
-      await sleep(20000)
-    }
 - url: ${BASE_URL}/life-expectancy
-  output: screenshots/life-expectancy.png
-  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
-  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
-  # so now we scroll in 20 steps and sleep briefly in between
-  javascript: |
-    async function()
-      {
-      function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-      }
-      const steps = 20;
-      for (let i = 1; i <= steps; i++) {
-        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
-        await sleep(500)
-      }
+  output: screenshots/life-expectancy-page.png
+  javascript: *default_javascript
 
-      // Pages with citation include the full URL that is different depending on the $BASE_URL
-      // so here we remove urls in the relevant sections
-      const footer = document.querySelector('footer.article-footer');
-      const regex = /https?:\/\/[^\/]+/g;
-      if (footer)
-        footer.innerHTML = footer.innerHTML.replace(regex, '');
+- url: ${BASE_URL}/grapher/coal-prod-per-capita
+  output: screenshots/coal-prod-per-capita-datapage.png
+  javascript: *default_javascript
 
-      // Sleep until everything has loaded
-      await sleep(20000)
-    }
 - url: ${BASE_URL}/births-and-deaths
   output: screenshots/births-and-deaths.png
-  # Images load lazily and Grapher loads via Intersection Observer. I tried scrolling down all the way
-  # to the bottom of the page with behaviour: 'smooth' but that was not enough to trigger all load events
-  # so now we scroll in 20 steps and sleep briefly in between
-  javascript: |
-    async function()
-      {
-      function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-      }
-      const steps = 20;
-      for (let i = 1; i <= steps; i++) {
-        window.scrollTo({top: document.documentElement.scrollHeight/steps*i, behavior: 'smooth' });
-        await sleep(500)
-      }
+  javascript: *default_javascript
 
-      // Pages with citation include the full URL that is different depending on the $BASE_URL
-      // so here we remove urls in the relevant sections
-      const footer = document.querySelector('footer.article-footer');
-      const regex = /https?:\/\/[^\/]+/g;
-      if (footer)
-        footer.innerHTML = footer.innerHTML.replace(regex, '');
+- url: ${BASE_URL}/explorers/migration
+  output: screenshots/migration-explorer.png
+  javascript: *default_javascript
 
-      // Sleep until everything has loaded
-      await sleep(20000)
-    }
+- url: ${BASE_URL}/
+  output: screenshots/homepage.png
+  javascript: *default_javascript
