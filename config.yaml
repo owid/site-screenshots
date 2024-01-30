@@ -10,17 +10,12 @@
           reject(`${window.location.href} took more than 60 seconds to scroll to the end of the page and fully load.`)
         }, 60 * 1000)
 
-        let haveAllGraphersLoaded = false
-        document.addEventListener("allGraphersLoaded", () => {
-          haveAllGraphersLoaded = true
-        });
-
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
           window.scrollBy(0, window.innerHeight / 4);
           await sleep(250);
         }
 
-        while (!haveAllGraphersLoaded) {
+        while (!window._OWID_HAVE_ALL_GRAPHERS_LOADED) {
           await sleep(500);
         }
 
@@ -36,8 +31,8 @@
   output: screenshots/life-expectancy-page.png
   javascript: *default_javascript
 
-- url: ${BASE_URL}/grapher/coal-prod-per-capita
-  output: screenshots/coal-prod-per-capita-datapage.png
+- url: ${BASE_URL}/grapher/tomato-production
+  output: screenshots/tomato-production-datapage.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/births-and-deaths
