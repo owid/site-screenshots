@@ -1,5 +1,5 @@
 - url: ${BASE_URL}/from-1-90-to-2-15-a-day-the-updated-international-poverty-line
-  output: screenshots/from-1-90-to-2-15-a-day-the-updated-international-poverty-line.png
+  output: ${TARGET_DIR}/from-1-90-to-2-15-a-day-the-updated-international-poverty-line.png
   javascript: &default_javascript |
     function () {
       return new Promise(async (resolve, reject) => {
@@ -24,25 +24,25 @@
     }
 
 - url: ${BASE_URL}/energy
-  output: screenshots/energy.png
+  output: ${TARGET_DIR}/energy.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/life-expectancy
-  output: screenshots/life-expectancy-page.png
+  output: ${TARGET_DIR}/life-expectancy-page.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/grapher/tomato-production
-  output: screenshots/tomato-production-datapage.png
+  output: ${TARGET_DIR}/tomato-production-datapage.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/births-and-deaths
-  output: screenshots/births-and-deaths.png
+  output: ${TARGET_DIR}/births-and-deaths.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/explorers/migration
-  output: screenshots/migration-explorer.png
+  output: ${TARGET_DIR}/migration-explorer.png
   javascript: *default_javascript
 
 - url: ${BASE_URL}/
-  output: screenshots/homepage.png
+  output: ${TARGET_DIR}/homepage.png
   javascript: *default_javascript
