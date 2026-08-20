@@ -19,14 +19,18 @@
           await sleep(500);
         }
 
-        // That flag is not enough on its own: site/runAllGraphersLoadedListener.ts counts
-        // grapherLoaded events rather than distinct charts, and a chart fires one every
-        // time it is re-rendered - which the ResizeObserver in GrapherUseHelpers.tsx does
-        // whenever it measures the container again. On a page with several charts the
-        // count can therefore reach the total while one chart has not drawn yet, and the
-        // screenshot catches a spinner, a chart at a fraction of its width or a map on
-        // the wrong year. So wait for the charts to go quiet too: no loading indicators
-        // left, and two consecutive samples of their size and labels that agree.
+        // That flag is never enough on its own. It means "no grapher is loading right
+        // now", and charts load lazily as they scroll into view, so it reads true both
+        // before a chart starts and after it finishes. A chart being loaded also does not
+        // mean it has finished drawing at its final size. Either way the screenshot can
+        // catch a spinner, a chart at a fraction of its width or a map on the wrong year,
+        // which shifts everything below it and reads as a whole-page diff. So wait for
+        // the charts to go quiet as well: nothing loading, no loading indicators left,
+        // and two consecutive samples of chart size and labels that agree.
+        //
+        // _OWID_GRAPHERS_LOADING is undefined on a site baked before owid-grapher#7020,
+        // where the flag above was set before a single chart had drawn; the sampling
+        // below is what carries those pages.
         function fingerprintCharts() {
           return [...document.querySelectorAll(".GrapherComponent")]
             .map((chart) => {
@@ -39,7 +43,10 @@
         let previousFingerprint = null
         for (let attempt = 0; attempt < 20; attempt++) {
           const fingerprint = fingerprintCharts()
-          const isQuiet = fingerprint === previousFingerprint && !document.querySelector(".loading-indicator")
+          const isQuiet =
+            fingerprint === previousFingerprint &&
+            !window._OWID_GRAPHERS_LOADING &&
+            !document.querySelector(".loading-indicator")
           if (isQuiet) break
           previousFingerprint = fingerprint
           await sleep(500);
