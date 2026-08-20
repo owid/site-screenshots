@@ -19,6 +19,32 @@
           await sleep(500);
         }
 
+        // That flag is not enough on its own: site/runAllGraphersLoadedListener.ts counts
+        // grapherLoaded events rather than distinct charts, and a chart fires one every
+        // time it is re-rendered - which the ResizeObserver in GrapherUseHelpers.tsx does
+        // whenever it measures the container again. On a page with several charts the
+        // count can therefore reach the total while one chart has not drawn yet, and the
+        // screenshot catches a spinner, a chart at a fraction of its width or a map on
+        // the wrong year. So wait for the charts to go quiet too: no loading indicators
+        // left, and two consecutive samples of their size and labels that agree.
+        function fingerprintCharts() {
+          return [...document.querySelectorAll(".GrapherComponent")]
+            .map((chart) => {
+              const rect = chart.getBoundingClientRect();
+              return [Math.round(rect.width), Math.round(rect.height), chart.textContent.length].join("x")
+            })
+            .join(" ")
+        }
+
+        let previousFingerprint = null
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const fingerprint = fingerprintCharts()
+          const isQuiet = fingerprint === previousFingerprint && !document.querySelector(".loading-indicator")
+          if (isQuiet) break
+          previousFingerprint = fingerprint
+          await sleep(500);
+        }
+
         // The baked page spells out the origin it was baked for: the "Cite this work"
         // block, the BibTeX note and the data-download snippets on data pages all
         // contain a URL, and production additionally points at the archived snapshot of
