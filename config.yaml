@@ -7,30 +7,27 @@
           return new Promise((resolve) => setTimeout(resolve, ms));
         }
         setTimeout(() => {
-          reject(`${window.location.href} took more than 60 seconds to scroll to the end of the page and fully load.`)
-        }, 60 * 1000)
+          reject(`${window.location.href} took more than 120 seconds to scroll to the end of the page and fully load.`)
+        }, 120 * 1000)
 
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
           window.scrollBy(0, window.innerHeight / 4);
           await sleep(250);
         }
 
-        while (!window._OWID_HAVE_ALL_GRAPHERS_LOADED) {
-          await sleep(500);
-        }
-
-        // That flag is never enough on its own. It means "no grapher is loading right
-        // now", and charts load lazily as they scroll into view, so it reads true both
-        // before a chart starts and after it finishes. A chart being loaded also does not
-        // mean it has finished drawing at its final size. Either way the screenshot can
-        // catch a spinner, a chart at a fraction of its width or a map on the wrong year,
-        // which shifts everything below it and reads as a whole-page diff. So wait for
-        // the charts to go quiet as well: nothing loading, no loading indicators left,
-        // and two consecutive samples of chart size and labels that agree.
+        // Now wait for the charts. window._OWID_GRAPHERS_LOADING is how many graphers are
+        // loading right now; it is undefined on a site baked before owid-grapher#7020,
+        // which is every reference screenshot until that deploys.
         //
-        // _OWID_GRAPHERS_LOADING is undefined on a site baked before owid-grapher#7020,
-        // where the flag above was set before a single chart had drawn; the sampling
-        // below is what carries those pages.
+        // A count of zero is not by itself the signal we want: charts load lazily as they
+        // scroll into view, so the count reads zero both before a chart starts and after
+        // it finishes, and a chart that has loaded may still be drawing at the wrong size.
+        // Screenshot too early and we catch a spinner, a chart at a fraction of its width
+        // or a map on the wrong year, which shifts everything below it and reads as a
+        // whole-page diff. So wait for the page to go quiet: nothing loading, no loading
+        // indicators left, and two consecutive samples of chart size and labels that
+        // agree. 30 seconds of headroom, because the charts on a slow machine take much
+        // longer than the ones here do.
         function fingerprintCharts() {
           return [...document.querySelectorAll(".GrapherComponent")]
             .map((chart) => {
@@ -41,7 +38,7 @@
         }
 
         let previousFingerprint = null
-        for (let attempt = 0; attempt < 20; attempt++) {
+        for (let attempt = 0; attempt < 60; attempt++) {
           const fingerprint = fingerprintCharts()
           const isQuiet =
             fingerprint === previousFingerprint &&
