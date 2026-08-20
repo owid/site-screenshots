@@ -7,17 +7,94 @@
           return new Promise((resolve) => setTimeout(resolve, ms));
         }
         setTimeout(() => {
-          reject(`${window.location.href} took more than 60 seconds to scroll to the end of the page and fully load.`)
-        }, 60 * 1000)
+          reject(`${window.location.href} took more than 120 seconds to scroll to the end of the page and fully load.`)
+        }, 120 * 1000)
 
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
           window.scrollBy(0, window.innerHeight / 4);
           await sleep(250);
         }
 
-        while (!window._OWID_HAVE_ALL_GRAPHERS_LOADED) {
+        // Now wait for the charts. window._OWID_GRAPHERS_LOADING is how many graphers are
+        // loading right now; it is undefined on a site baked before owid-grapher#7020,
+        // which is every reference screenshot until that deploys.
+        //
+        // A count of zero is not by itself the signal we want: charts load lazily as they
+        // scroll into view, so the count reads zero both before a chart starts and after
+        // it finishes, and a chart that has loaded may still be drawing at the wrong size.
+        // Screenshot too early and we catch a spinner, a chart at a fraction of its width
+        // or a map on the wrong year, which shifts everything below it and reads as a
+        // whole-page diff. So wait for the page to go quiet: nothing loading, no loading
+        // indicators left, and two consecutive samples of chart size and labels that
+        // agree. 30 seconds of headroom, because the charts on a slow machine take much
+        // longer than the ones here do.
+        function fingerprintCharts() {
+          return [...document.querySelectorAll(".GrapherComponent")]
+            .map((chart) => {
+              const rect = chart.getBoundingClientRect();
+              return [Math.round(rect.width), Math.round(rect.height), chart.textContent.length].join("x")
+            })
+            .join(" ")
+        }
+
+        let previousFingerprint = null
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const fingerprint = fingerprintCharts()
+          const isQuiet =
+            fingerprint === previousFingerprint &&
+            !window._OWID_GRAPHERS_LOADING &&
+            !document.querySelector(".loading-indicator")
+          if (isQuiet) break
+          previousFingerprint = fingerprint
           await sleep(500);
         }
+
+        // The baked page spells out the origin it was baked for: the "Cite this work"
+        // block, the BibTeX note and the data-download snippets on data pages all
+        // contain a URL, and production additionally points at the archived snapshot of
+        // the page ("Browse past versions", "(archived on <date>)"). A staging server can
+        // therefore never match the production reference, and because the strings have
+        // different lengths the text rewraps and everything below it shifts, turning one
+        // line of noise into a whole-page diff. Rewrite both sides to the same canonical
+        // form so the diff on GitHub only shows real changes.
+        // Note: no template literals with plain identifiers in here - run.sh pipes this
+        // file through envsubst, which replaces any dollar-brace expression that looks
+        // like a shell variable name with an empty string.
+        const CANONICAL_ORIGIN = "https://ourworldindata.org"
+        const replacements = [
+          // archived snapshots: drop the snapshot timestamp and the .html suffix that
+          // only the archived copy of a page carries
+          [/https?:\/\/archive\.ourworldindata\.org\/\d{8}-\d{6}([^\s'")\]}]*)\.html/g, CANONICAL_ORIGIN + "$1"],
+          [/https?:\/\/archive\.ourworldindata\.org\/\d{8}-\d{6}/g, CANONICAL_ORIGIN],
+          // the staging server itself, and the local data API a staging bake points at
+          [/https?:\/\/staging-site-[\w.-]+/g, CANONICAL_ORIGIN],
+          [/https?:\/\/localhost(:\d+)?/g, CANONICAL_ORIGIN],
+          // only production has an archived snapshot to date the citation with
+          [/ \(archived on [^)]*\)\./g, ""],
+        ]
+
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          let text = node.nodeValue
+          for (const [pattern, replacement] of replacements) {
+            text = text.replace(pattern, replacement)
+          }
+          if (text !== node.nodeValue) node.nodeValue = text
+        }
+
+        // Production links to the archived versions of an article, staging has none, and
+        // the link takes up a line in the header
+        document
+          .querySelectorAll(".centered-article-header__browse-versions-button")
+          .forEach((button) => button.parentElement.remove())
+
+        // The copy-to-clipboard buttons need the clipboard API, so they only render in a
+        // secure context: production has them, a staging server served over plain HTTP
+        // never does. They share a flex row with the code they copy, so their absence
+        // rewraps every citation block below them.
+        document
+          .querySelectorAll(".code-copy-button")
+          .forEach((button) => button.remove())
 
         resolve()
       });
