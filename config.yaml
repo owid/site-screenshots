@@ -71,6 +71,10 @@
           [/https?:\/\/localhost(:\d+)?/g, CANONICAL_ORIGIN],
           // only production has an archived snapshot to date the citation with
           [/ \(archived on [^)]*\)\./g, ""],
+          // data page citations stamp themselves with today's date, so a reference taken
+          // yesterday differs from a branch screenshot taken today - by a line, and by a
+          // rewrap whenever the month's name is a different length
+          [/Retrieved [A-Z][a-z]+ \d{1,2}, \d{4} from/g, "Retrieved from"],
         ]
 
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
@@ -95,6 +99,29 @@
         document
           .querySelectorAll(".code-copy-button")
           .forEach((button) => button.remove())
+
+        // Last thing before the shot: pin each chart at the size it settled on. Taking a
+        // full-page screenshot resizes the viewport to 1x1 and restores it ~175ms later.
+        // Mobile CSS collapses the chart containers for that moment, grapher re-measures
+        // through its ResizeObserver and redraws small, and its 400ms debounce means the
+        // redraw at the restored width lands after the pixels have been read - so the shot
+        // catches a narrow card sitting in a full-width figure (measured: a 208px chart in
+        // a 604px container). No wait can catch this, because the chart is finished and
+        // stable, just wrong. An inline width beats the media query, so the containers
+        // never move and grapher never re-measures.
+        for (const chart of document.querySelectorAll(".GrapherComponent")) {
+          const container = chart.parentElement
+          container.style.width = container.getBoundingClientRect().width + "px"
+          container.style.flex = "none"
+        }
+
+        // Same transient resize reaches grapher's window-resize handler, which drives its
+        // mobile layout decisions off window.innerWidth. Frozen values mean the handler
+        // reads what it already had, so mobx sees no change and nothing re-renders.
+        for (const dimension of ["innerWidth", "innerHeight"]) {
+          const frozen = window[dimension]
+          Object.defineProperty(window, dimension, { configurable: true, get: () => frozen })
+        }
 
         resolve()
       });
