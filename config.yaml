@@ -15,6 +15,14 @@
           await sleep(250);
         }
 
+        // Freeze CSS transitions and animations first. The cookie banner fades in over the
+        // last rows of the page, so two runs catch it at different opacities: 2705 pixels
+        // differing by 10/255 on the migration explorer - invisible, but enough for the
+        // file to show up as changed in the diff.
+        const frozenMotion = document.createElement("style")
+        frozenMotion.textContent = "*, *::before, *::after { transition: none !important; animation: none !important; }"
+        document.head.append(frozenMotion)
+
         // Now wait for the charts. window._OWID_GRAPHERS_LOADING is how many graphers are
         // loading right now; it is undefined on a site baked before owid-grapher#7020,
         // which is every reference screenshot until that deploys.
@@ -26,8 +34,14 @@
         // or a map on the wrong year, which shifts everything below it and reads as a
         // whole-page diff. So wait for the page to go quiet: nothing loading, no loading
         // indicators left, and two consecutive samples of chart size and labels that
-        // agree. 30 seconds of headroom, because the charts on a slow machine take much
+        // agree. A minute of headroom, because the charts on a slow machine take much
         // longer than the ones here do.
+        //
+        // If it never goes quiet, fail the shot rather than photographing whatever state
+        // the page is in. A screenshot with a chart still spinning in it is not a
+        // screenshot of this branch - it reads as a whole-page diff and sends the reader
+        // looking for a change that isn't there. run.sh passes --fail, so the run stops
+        // and says which page; owidbot reports the branch's screenshots as failed.
         function fingerprintCharts() {
           return [...document.querySelectorAll(".GrapherComponent")]
             .map((chart) => {
@@ -38,15 +52,29 @@
         }
 
         let previousFingerprint = null
-        for (let attempt = 0; attempt < 60; attempt++) {
+        let isQuiet = false
+        for (let attempt = 0; attempt < 120 && !isQuiet; attempt++) {
           const fingerprint = fingerprintCharts()
-          const isQuiet =
+          isQuiet =
             fingerprint === previousFingerprint &&
             !window._OWID_GRAPHERS_LOADING &&
             !document.querySelector(".loading-indicator")
-          if (isQuiet) break
           previousFingerprint = fingerprint
-          await sleep(500);
+          if (!isQuiet) await sleep(500);
+        }
+
+        if (!isQuiet) {
+          const loading = window._OWID_GRAPHERS_LOADING
+          const spinners = document.querySelectorAll(".loading-indicator").length
+          // Concatenation, not `${...}` interpolation of plain names: run.sh pipes this
+          // file through envsubst, which would replace them with empty strings.
+          reject(
+            window.location.href + " never settled: " + spinners +
+            " chart(s) still loading after 60 seconds (grapher reports " +
+            (loading === undefined ? "no count" : loading) +
+            ", chart sizes " + fingerprintCharts() + ")."
+          )
+          return
         }
 
         // The baked page spells out the origin it was baked for: the "Cite this work"
@@ -99,6 +127,22 @@
         document
           .querySelectorAll(".code-copy-button")
           .forEach((button) => button.remove())
+
+        // Force every image that has arrived to finish decoding. Two runs of the energy page
+        // differed in 114,000 pixels, all by 10/255 or less - invisible, but enough to mark
+        // the file as changed: a progressive image renders coarse then fine, so a capture
+        // mid-decode is a slightly softer version of the same picture.
+        //
+        // Only the ones already `complete`: decode() on an image that has not been fetched
+        // waits for the fetch, and a topic page keeps ~100 lazy thumbnails that never load
+        // at all (108 on /energy), so decoding everything hung the shot until the page
+        // timeout. Nothing here waits for an image - a picture that hasn't arrived isn't in
+        // the screenshot either way.
+        await Promise.all(
+          [...document.images]
+            .filter((image) => image.complete)
+            .map((image) => image.decode().catch(() => {}))
+        )
 
         // Last thing before the shot: pin each chart at the size it settled on. Taking a
         // full-page screenshot resizes the viewport to 1x1 and restores it ~175ms later.
