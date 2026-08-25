@@ -6,9 +6,14 @@
         function sleep(ms) {
           return new Promise((resolve) => setTimeout(resolve, ms));
         }
+        // The whole thing - scrolling, the settle wait below, the image decode - gets
+        // this long. Concatenation, not `${...}` interpolation of a plain name: run.sh
+        // pipes this file through envsubst, which would replace it with an empty string.
+        const PAGE_TIMEOUT_SECONDS = 300
         setTimeout(() => {
-          reject(`${window.location.href} took more than 120 seconds to scroll to the end of the page and fully load.`)
-        }, 120 * 1000)
+          reject(window.location.href + " took more than " + PAGE_TIMEOUT_SECONDS +
+                 " seconds to scroll to the end of the page and fully load.")
+        }, PAGE_TIMEOUT_SECONDS * 1000)
 
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
           window.scrollBy(0, window.innerHeight / 4);
@@ -34,14 +39,28 @@
         // or a map on the wrong year, which shifts everything below it and reads as a
         // whole-page diff. So wait for the page to go quiet: nothing loading, no loading
         // indicators left, and two consecutive samples of chart size and labels that
-        // agree. A minute of headroom, because the charts on a slow machine take much
-        // longer than the ones here do.
+        // agree.
+        //
+        // Three minutes of headroom, because of when this runs: the screenshot step
+        // depends on the bake and starts seconds after it, alongside the Cloudflare
+        // preview deploy (which pushes the whole baked site, ~100k files, off the box)
+        // and the BDD tests. A chart's config is served by the staging container over
+        // the LAN and arrives regardless; its data comes from api-staging.owid.io and
+        // has to leave the machine, so in that window it is the slow half. Measured on
+        // lxc-manager-1 with this same shot-scraper and browser, once those two steps
+        // are done: 27 seconds for the poverty-line page, which had timed out at 60 in
+        // CI with all 8 charts still empty. Failures were partial too - the energy page
+        // on build 32895 had 1 of 3 charts left - which is queueing, not a hang.
         //
         // If it never goes quiet, fail the shot rather than photographing whatever state
         // the page is in. A screenshot with a chart still spinning in it is not a
         // screenshot of this branch - it reads as a whole-page diff and sends the reader
         // looking for a change that isn't there. run.sh passes --fail, so the run stops
-        // and says which page; owidbot reports the branch's screenshots as failed.
+        // and says which page; owidbot reports the branch's screenshots as failed. That
+        // also bounds what the longer budget can cost: the run gives up at the first page
+        // that never settles, so the worst case is the pages before it at their usual
+        // half-minute plus one three-minute wait - well inside the step's 20-minute
+        // timeout, which every other branch queues behind.
         function fingerprintCharts() {
           return [...document.querySelectorAll(".GrapherComponent")]
             .map((chart) => {
@@ -53,13 +72,15 @@
 
         let previousFingerprint = null
         let isQuiet = false
-        for (let attempt = 0; attempt < 120 && !isQuiet; attempt++) {
+        const SETTLE_TIMEOUT_SECONDS = 180
+        for (let attempt = 0; attempt < SETTLE_TIMEOUT_SECONDS * 2 && !isQuiet; attempt++) {
           const fingerprint = fingerprintCharts()
           isQuiet =
             fingerprint === previousFingerprint &&
             !window._OWID_GRAPHERS_LOADING &&
             !document.querySelector(".loading-indicator")
           previousFingerprint = fingerprint
+          // Two samples a second, which is where the loop bound's factor of 2 comes from
           if (!isQuiet) await sleep(500);
         }
 
@@ -70,7 +91,8 @@
           // file through envsubst, which would replace them with empty strings.
           reject(
             window.location.href + " never settled: " + spinners +
-            " chart(s) still loading after 60 seconds (grapher reports " +
+            " chart(s) still loading after " + SETTLE_TIMEOUT_SECONDS +
+            " seconds (grapher reports " +
             (loading === undefined ? "no count" : loading) +
             ", chart sizes " + fingerprintCharts() + ")."
           )
