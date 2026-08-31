@@ -6,13 +6,91 @@
         function sleep(ms) {
           return new Promise((resolve) => setTimeout(resolve, ms));
         }
+
+        // When a page does not settle, the only thing worth knowing is what the browser
+        // was doing, and every run so far has left us guessing. shot-scraper gives the
+        // page no hook into Playwright's network and console events, so watch what the
+        // page itself uses: a chart's config, data and metadata all go through fetch
+        // (owid-grapher's loadVariable.ts, via fetchWithRetry), and every uncaught error
+        // and rejection reaches window.
+        //
+        // What this is looking for: fetchWithRetry gives up after five attempts with
+        // exponential backoff - about eight seconds - and throws. So a chart still
+        // loading three minutes later is more likely one whose request failed and whose
+        // failure went nowhere than one still waiting on the network, and those two look
+        // identical from the outside. This says which.
+        //
+        // Attached before the scroll, because the scroll is what brings the charts into
+        // view and starts their requests. Nothing here changes what fetch does, and none
+        // of it is read unless the page fails to settle.
+        const pendingRequests = new Map()
+        const failedRequests = []
+        const pageErrors = []
+        let requestCount = 0
+        const nativeFetch = window.fetch
+        window.fetch = function () {
+          const args = [...arguments]
+          const url = args[0] && args[0].url ? args[0].url : String(args[0])
+          const id = requestCount++
+          pendingRequests.set(id, url)
+          function settleRequest(failure) {
+            pendingRequests.delete(id)
+            if (failure) failedRequests.push(failure + " " + url)
+          }
+          // apply on window rather than this: a bare fetch() call passes undefined, and
+          // the native function rejects an unrelated receiver with "Illegal invocation"
+          return nativeFetch.apply(window, args).then(
+            function (response) {
+              // An opaque response - a no-cors beacon, which is what the analytics
+              // collector gets - reports status 0 and ok false however well it went, so
+              // there is nothing to read. Left in, it was the whole failure list: each
+              // beacon carries a different query string, so they never collapse and they
+              // pushed the requests we care about past the cap.
+              const opaque = response.type === "opaque"
+              settleRequest(opaque || response.ok ? null : "HTTP " + response.status)
+              return response
+            },
+            function (error) {
+              settleRequest("failed (" + error.message + ")")
+              throw error
+            }
+          )
+        }
+        window.addEventListener("error", (event) => {
+          pageErrors.push(event.message + " (" + event.filename + ":" + event.lineno + ")")
+        })
+        window.addEventListener("unhandledrejection", (event) => {
+          const reason = event.reason
+          pageErrors.push("unhandled rejection: " +
+                          ((reason && reason.message) || String(reason)))
+        })
+
+        // Deduplicated because fetchWithRetry makes five attempts, so one broken request
+        // appears five times; capped so one pathological URL cannot swamp the message.
+        function describeRequests(label, urls) {
+          const unique = [...new Set(urls.map((url) => url.slice(0, 200)))]
+          if (!unique.length) return "no " + label
+          const shown = unique.slice(0, 5)
+          return unique.length + " " + label + ": " + shown.join(", ") +
+                 (unique.length > shown.length ? ", ..." : "")
+        }
+
+        function diagnostics() {
+          return [
+            describeRequests("failed request(s)", failedRequests),
+            describeRequests("request(s) still in flight", [...pendingRequests.values()]),
+            describeRequests("page error(s)", pageErrors),
+          ].join("; ")
+        }
+
         // The whole thing - scrolling, the settle wait below, the image decode - gets
         // this long. Concatenation, not `${...}` interpolation of a plain name: run.sh
         // pipes this file through envsubst, which would replace it with an empty string.
         const PAGE_TIMEOUT_SECONDS = 300
         setTimeout(() => {
           reject(window.location.href + " took more than " + PAGE_TIMEOUT_SECONDS +
-                 " seconds to scroll to the end of the page and fully load.")
+                 " seconds to scroll to the end of the page and fully load. " +
+                 diagnostics() + ".")
         }, PAGE_TIMEOUT_SECONDS * 1000)
 
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
@@ -37,9 +115,24 @@
         // it finishes, and a chart that has loaded may still be drawing at the wrong size.
         // Screenshot too early and we catch a spinner, a chart at a fraction of its width
         // or a map on the wrong year, which shifts everything below it and reads as a
-        // whole-page diff. So wait for the page to go quiet: nothing loading, no loading
-        // indicators left, and two consecutive samples of chart size and labels that
-        // agree.
+        // whole-page diff.
+        //
+        // Asking only whether anything is loading right now leaves a hole, and branch
+        // screenshots have been falling through it: a grapher that has mounted but not yet
+        // announced itself has an empty .GrapherComponent, has never incremented the
+        // count, and has no spinner up, so all three conditions hold at once and the page
+        // reads as finished. On legend-tap the "Key Charts on Energy" carousel was
+        // photographed as a white box (68,959 pixels, the branch side pure white), and on
+        // mdim-dropdown-search two more went blank on the same page and took 20 pixels of
+        // page height with them, which shifted everything below and made 23.6% of the file
+        // differ. Nobody can attribute a diff like that.
+        //
+        // So the question is not "is anything loading?" but "has every chart on the page
+        // been drawn?" - see undrawnCharts below. The scroll above makes that answerable:
+        // GrapherWithFallback swaps the real grapher in when it comes within 400px of the
+        // viewport and freezes the decision, so by the time we get here every visible
+        // placeholder has been asked to load. This also turns the older failure into a
+        // wait: a slow chart is now waited for instead of being shot early.
         //
         // Three minutes of headroom, because of when this runs: the screenshot step
         // depends on the bake and starts seconds after it, alongside the Cloudflare
@@ -70,15 +163,62 @@
             .join(" ")
         }
 
+        // Which charts the page still owes us. Empty means every one of them has drawn
+        // something, which is the condition the three signals above cannot express.
+        function undrawnCharts() {
+          // A hidden placeholder never loads and never should, so waiting for one would
+          // hang every run on the two pages that have them: /life-expectancy carries three
+          // in the inactive slides of a key-insights slider, visibility: hidden inside a
+          // zero-height .slide, and the homepage keeps seven at 0x0. Neither set is in the
+          // screenshot.
+          //
+          // Element.checkVisibility() answers this in one call, but its option names were
+          // renamed between the Chromium this repo pins (113) and current ones, and a call
+          // that throws in here does not reject the promise - it leaves it unsettled until
+          // the 300-second page timeout, so every page would fail. These two primitives
+          // are older than any browser we will run and give the same answers (checked
+          // against checkVisibility on every placeholder and chart of all seven pages):
+          // an element in a display: none subtree has no client rects, whatever its own
+          // computed display says, and visibility inherits, so the element's own value
+          // already reflects a hidden ancestor.
+          function isVisible(element) {
+            return element.getClientRects().length > 0 &&
+                   getComputedStyle(element).visibility === "visible"
+          }
+          function describe(element) {
+            const rect = element.getBoundingClientRect()
+            return Math.round(rect.width) + "x" + Math.round(rect.height) +
+                   " at y=" + Math.round(rect.top + window.scrollY)
+          }
+
+          const undrawn = []
+          for (const placeholder of document.querySelectorAll(".GrapherWithFallback")) {
+            if (isVisible(placeholder) && !placeholder.querySelector(".GrapherComponent")) {
+              undrawn.push("a placeholder with no chart in it, " + describe(placeholder))
+            }
+          }
+          // Mounted but blank. This is the state that was being photographed: the
+          // fingerprint reads 813x575x0 and stays there.
+          for (const chart of document.querySelectorAll(".GrapherComponent")) {
+            if (isVisible(chart) && !chart.textContent.length) {
+              undrawn.push("a chart that has drawn nothing, " + describe(chart))
+            }
+          }
+          return undrawn
+        }
+
         let previousFingerprint = null
+        let undrawn = []
         let isQuiet = false
         const SETTLE_TIMEOUT_SECONDS = 180
         for (let attempt = 0; attempt < SETTLE_TIMEOUT_SECONDS * 2 && !isQuiet; attempt++) {
           const fingerprint = fingerprintCharts()
+          undrawn = undrawnCharts()
           isQuiet =
             fingerprint === previousFingerprint &&
             !window._OWID_GRAPHERS_LOADING &&
-            !document.querySelector(".loading-indicator")
+            !document.querySelector(".loading-indicator") &&
+            !undrawn.length
           previousFingerprint = fingerprint
           // Two samples a second, which is where the loop bound's factor of 2 comes from
           if (!isQuiet) await sleep(500);
@@ -90,11 +230,13 @@
           // Concatenation, not `${...}` interpolation of plain names: run.sh pipes this
           // file through envsubst, which would replace them with empty strings.
           reject(
-            window.location.href + " never settled: " + spinners +
-            " chart(s) still loading after " + SETTLE_TIMEOUT_SECONDS +
-            " seconds (grapher reports " +
-            (loading === undefined ? "no count" : loading) +
-            ", chart sizes " + fingerprintCharts() + ")."
+            window.location.href + " never settled after " + SETTLE_TIMEOUT_SECONDS +
+            " seconds: " + spinners + " spinner(s), grapher reports " +
+            (loading === undefined ? "no count" : loading) + " loading, " +
+            (undrawn.length
+              ? undrawn.length + " chart(s) not drawn (" + undrawn.join("; ") + ")"
+              : "every chart drawn") +
+            ", chart sizes " + fingerprintCharts() + ". " + diagnostics() + "."
           )
           return
         }
