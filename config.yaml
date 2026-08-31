@@ -6,13 +6,91 @@
         function sleep(ms) {
           return new Promise((resolve) => setTimeout(resolve, ms));
         }
+
+        // When a page does not settle, the only thing worth knowing is what the browser
+        // was doing, and every run so far has left us guessing. shot-scraper gives the
+        // page no hook into Playwright's network and console events, so watch what the
+        // page itself uses: a chart's config, data and metadata all go through fetch
+        // (owid-grapher's loadVariable.ts, via fetchWithRetry), and every uncaught error
+        // and rejection reaches window.
+        //
+        // What this is looking for: fetchWithRetry gives up after five attempts with
+        // exponential backoff - about eight seconds - and throws. So a chart still
+        // loading three minutes later is more likely one whose request failed and whose
+        // failure went nowhere than one still waiting on the network, and those two look
+        // identical from the outside. This says which.
+        //
+        // Attached before the scroll, because the scroll is what brings the charts into
+        // view and starts their requests. Nothing here changes what fetch does, and none
+        // of it is read unless the page fails to settle.
+        const pendingRequests = new Map()
+        const failedRequests = []
+        const pageErrors = []
+        let requestCount = 0
+        const nativeFetch = window.fetch
+        window.fetch = function () {
+          const args = [...arguments]
+          const url = args[0] && args[0].url ? args[0].url : String(args[0])
+          const id = requestCount++
+          pendingRequests.set(id, url)
+          function settleRequest(failure) {
+            pendingRequests.delete(id)
+            if (failure) failedRequests.push(failure + " " + url)
+          }
+          // apply on window rather than this: a bare fetch() call passes undefined, and
+          // the native function rejects an unrelated receiver with "Illegal invocation"
+          return nativeFetch.apply(window, args).then(
+            function (response) {
+              // An opaque response - a no-cors beacon, which is what the analytics
+              // collector gets - reports status 0 and ok false however well it went, so
+              // there is nothing to read. Left in, it was the whole failure list: each
+              // beacon carries a different query string, so they never collapse and they
+              // pushed the requests we care about past the cap.
+              const opaque = response.type === "opaque"
+              settleRequest(opaque || response.ok ? null : "HTTP " + response.status)
+              return response
+            },
+            function (error) {
+              settleRequest("failed (" + error.message + ")")
+              throw error
+            }
+          )
+        }
+        window.addEventListener("error", (event) => {
+          pageErrors.push(event.message + " (" + event.filename + ":" + event.lineno + ")")
+        })
+        window.addEventListener("unhandledrejection", (event) => {
+          const reason = event.reason
+          pageErrors.push("unhandled rejection: " +
+                          ((reason && reason.message) || String(reason)))
+        })
+
+        // Deduplicated because fetchWithRetry makes five attempts, so one broken request
+        // appears five times; capped so one pathological URL cannot swamp the message.
+        function describeRequests(label, urls) {
+          const unique = [...new Set(urls.map((url) => url.slice(0, 200)))]
+          if (!unique.length) return "no " + label
+          const shown = unique.slice(0, 5)
+          return unique.length + " " + label + ": " + shown.join(", ") +
+                 (unique.length > shown.length ? ", ..." : "")
+        }
+
+        function diagnostics() {
+          return [
+            describeRequests("failed request(s)", failedRequests),
+            describeRequests("request(s) still in flight", [...pendingRequests.values()]),
+            describeRequests("page error(s)", pageErrors),
+          ].join("; ")
+        }
+
         // The whole thing - scrolling, the settle wait below, the image decode - gets
         // this long. Concatenation, not `${...}` interpolation of a plain name: run.sh
         // pipes this file through envsubst, which would replace it with an empty string.
         const PAGE_TIMEOUT_SECONDS = 300
         setTimeout(() => {
           reject(window.location.href + " took more than " + PAGE_TIMEOUT_SECONDS +
-                 " seconds to scroll to the end of the page and fully load.")
+                 " seconds to scroll to the end of the page and fully load. " +
+                 diagnostics() + ".")
         }, PAGE_TIMEOUT_SECONDS * 1000)
 
         while (Math.round(window.scrollY + window.innerHeight) < document.body.scrollHeight) {
@@ -158,7 +236,7 @@
             (undrawn.length
               ? undrawn.length + " chart(s) not drawn (" + undrawn.join("; ") + ")"
               : "every chart drawn") +
-            ", chart sizes " + fingerprintCharts() + "."
+            ", chart sizes " + fingerprintCharts() + ". " + diagnostics() + "."
           )
           return
         }
