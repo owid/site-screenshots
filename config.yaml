@@ -136,6 +136,84 @@
           if (text !== node.nodeValue) node.nodeValue = text
         }
 
+        // Two more dates, computed in the browser from the clock rather than from the
+        // page's content: a data insight's dateline and the kicker on each homepage
+        // announcement. Both re-render as the calendar moves - "Today" one day,
+        // "Yesterday" the next, "12 days ago" a week later - so they record when the
+        // screenshot was taken. The reference is re-taken on every master build and a
+        // branch's run follows hours or days later, which is why branches that touch
+        // nothing on the homepage still reported homepage.png as changed: on
+        // timeline-end-period-labels the entire diff was 760 pixels, the digits in "10
+        // DAYS AGO" and one dateline reading TODAY against YESTERDAY.
+        //
+        // Each is rewritten to a form its own element actually renders, so a reader of
+        // the screenshot is not looking at a state the site cannot produce. For the
+        // dateline that has to be a date other than today, because one published today is
+        // also drawn in vermillion rather than blue: leaving the highlight class in place
+        // would keep the colour flipping after the text agreed.
+        //
+        // Scoped by selector rather than by matching these words in any text node -
+        // "Today" and "Yesterday" appear in article prose, and rewriting those would hide
+        // real changes.
+        const CANONICAL_DATE = "January 1"
+        const CANONICAL_RELATIVE_DATE = "This Week"
+        // dayjs's en relativeTime strings, plus the three cases HomepageIntro and
+        // DataInsightDateline special-case ahead of fromNow(). A source string rather than
+        // a literal because the regex is anchored, and the name is what the failure below
+        // tells the next reader to come and edit.
+        const RELATIVE_DATE_SOURCE =
+          "(?:Today|Yesterday|This Week|a few seconds ago|" +
+          "(?:an?|\\d+) (?:second|minute|hour|day|week|month|year)s? ago)"
+
+        // Replace an element's text while leaving its children alone: the dateline's
+        // calendar icon is an <svg> sibling of the text, and removing it would leave the
+        // line looking broken in a way the reference does not.
+        function replaceElementText(element, text) {
+          const textNodes = [...element.childNodes].filter(
+            (node) => node.nodeType === Node.TEXT_NODE
+          )
+          if (!textNodes.length) return
+          textNodes[0].nodeValue = text
+          for (const node of textNodes.slice(1)) node.nodeValue = ""
+        }
+
+        for (const dateline of document.querySelectorAll(".data-insight-dateline")) {
+          dateline.classList.remove("data-insight-dateline--is-today")
+          replaceElementText(dateline, CANONICAL_DATE)
+        }
+
+        // "Data update - 12 days ago": the kicker names the kind of announcement and
+        // stays, only the date after it is rewritten
+        const trailingRelativeDate = new RegExp(RELATIVE_DATE_SOURCE + "$")
+        const announcementMetas = document.querySelectorAll(
+          ".homepage-intro__announcement-meta"
+        )
+        // A kicker always ends in one of these, so a text that does not match means
+        // grapher words it differently now. The rewrite would then silently stop matching
+        // and the screenshots would go back to drifting a few pixels a day - exactly the
+        // kind of diff nobody can attribute. Say so instead of shrugging.
+        const unrecognisedKickers = []
+        for (const meta of announcementMetas) {
+          const text = meta.textContent
+          if (!trailingRelativeDate.test(text)) {
+            unrecognisedKickers.push(text)
+            continue
+          }
+          replaceElementText(
+            meta,
+            text.replace(trailingRelativeDate, CANONICAL_RELATIVE_DATE)
+          )
+        }
+        if (unrecognisedKickers.length) {
+          reject(
+            window.location.href + " has " + unrecognisedKickers.length +
+            " announcement kicker(s) not ending in a date this script recognises: " +
+            unrecognisedKickers.join(" | ") +
+            ". Update RELATIVE_DATE_SOURCE in config.yaml."
+          )
+          return
+        }
+
         // Production links to the archived versions of an article, staging has none, and
         // the link takes up a line in the header
         document
