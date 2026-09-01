@@ -76,7 +76,13 @@ stable.
 `yaml.safe_load(...)[0]["javascript"]` and evaluate it under Playwright. A copied snippet drifts
 from what runs in CI, and every one of these fixes lives in that one string.
 
-**9. Say when you could not reproduce it.** A warm laptop makes most of these deterministic. If
+**9. Instrument the shot's own timeline, not just its result.** Several of these bugs live between
+two steps of the shot rather than in either, and a measurement taken after `resolve()` cannot see
+them. Assign to `window.__something` at the points you care about and read them afterwards. That
+is how the image pin was caught re-creating the race it removes: 0 painted-and-unloaded images at
+the wait, **4** at `resolve()`, 0 again a second later.
+
+**10. Say when you could not reproduce it.** A warm laptop makes most of these deterministic. If
 the symptom only appears in CI, the honest claim is "the mechanism is gone", not "the symptom is
 fixed".
 
@@ -95,6 +101,16 @@ fixed".
 - Scope normalisations by selector, not by matching text anywhere in the page. "Today" and
   "Yesterday" occur in article prose, and rewriting those hides real changes.
 - Avoid tunable thresholds. Every fix here keys off something the page itself asserts.
+- **Visible is not the same as in the picture.** A topic page lays out ~100 chart thumbnails
+  inside the key-charts carousel's scroller and shows a handful, so of `/energy`'s 111 unloaded
+  images 108 are visible and clipped away by a scrolling ancestor. `isVisible` is the right test
+  for charts, whose absence is a diff wherever they sit; anything that *waits* for something needs
+  `isPainted`, or it waits for a hundred pictures nobody will see. That distinction is why waiting
+  for images was believed to hang the shot and why, scoped properly, it costs nothing.
+- **Anything that mutates the DOM before the capture can create the race it removes.** Assigning
+  `img.src` restarts the load algorithm even for the URL already displayed. A step like that
+  belongs before the wait that absorbs it, not in the last block before the shot — and the order
+  is not visible from either block on its own, so say so where it matters.
 
 ## Catalogue
 
@@ -113,14 +129,9 @@ fixed".
 | Blank charts | A grapher that mounted but never announced itself has an empty `.GrapherComponent`, a zero loading count and no spinner, so the page reads as finished and is photographed with a white box — 68,959 px on one branch, 23.6% on another | Settle on "every visible placeholder holds a non-empty chart", PR #12 |
 | Homepage editorial content | Production and staging serve different featured articles, because staging is baked from a DB snapshot taken when its container was created. The list is offset by one and the page shifts — 22.1%, six branches at once. Not normalisable: there is no value to agree on | Remove the featured-work, announcement and data-insight *items*, PR #13 |
 | Image source flipping | 58 of 66 images on `/life-expectancy` are a `<picture>` whose `<source sizes="350px">` beats an `<img>` carrying a `w=1200`–`w=3542` fallback. At the capture's 1×1 viewport the source stops winning and the browser falls back, so the same picture is drawn from a different file — 66,596 px at 1–3/255, four branches | Pin `img.src = img.currentSrc` and drop the candidates, for loaded images only, PR #14 |
+| Thumbnails that are in the shot but never arrived | An unloaded `<img>` renders its alt text, and whether a lazy thumbnail got that far varies: `/energy`'s reference is missing two the branch runs have — 21,250 px, three branches | Force `loading = "eager"` on painted-and-unloaded images and await them, in bounded rounds, PR #14 |
 
 ### Open
-
-- **Lazy thumbnails that are never requested.** `/energy`'s reference is missing two chart
-  thumbnails the branch runs have, rendering their alt text instead — 21,250 px, three branches.
-  Different mechanism from the decode band: these were never requested, not requested late (40 of
-  66 images on `/life-expectancy` never load at all, ~108 per topic page on `/energy`), so no wait
-  reaches them. Forcing them is what the decode comment says hangs the shot. Left alone.
 
 - **A chart whose config fetch fails spins forever.** Build 33174: eight
   `HTTP 500`/`502` responses for `/grapher/<slug>.config.json` from the branch's own staging
