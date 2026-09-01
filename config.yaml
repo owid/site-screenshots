@@ -370,6 +370,43 @@
           .querySelectorAll(".code-copy-button")
           .forEach((button) => button.remove())
 
+        // The homepage's editorial blocks are the one thing on this page that the two
+        // sides of the comparison genuinely disagree about. The reference is taken
+        // against production; a branch's shot is taken against a staging server baked
+        // from a database snapshot taken when its container was created. Publish an
+        // article in between and production has it, staging does not, so the featured
+        // work list is offset by one - and because every tile is sized by its own title,
+        // description and image, that offset moves everything below it. Measured on the
+        // PRs open at the time: 22.1% of homepage.png differing, and the page 18 pixels
+        // taller, on six branches at once, none of which touched the homepage.
+        //
+        // No rewrite can fix that the way canonicalising a date can: there is no value to
+        // agree on, the two servers are showing different articles. So the blocks come
+        // out, and the diff is left to say something about the page's layout instead.
+        //
+        // Scoped to the three lists, not to the sections holding them: the newsletter
+        // signup form sits inside .homepage-intro beside the featured work, the
+        // announcements and data-insights headers are static, and all of that is worth
+        // keeping - a newsletter change is exactly the kind of homepage diff that should
+        // still show up (owid-grapher#7112 was one). What is lost is regression cover for
+        // the tiles' and cards' own styling, which no longer appears in any screenshot.
+        // The items, not the containers holding them. Emptying
+        // .homepage-intro__featured-work instead took its column out of the grid, and the
+        // announcements and newsletter columns then rendered at about half their real
+        // width - a layout the site never shows anyone, so any regression the screenshot
+        // caught there would have been in the wrong geometry.
+        const editorialItems = [
+          // "New Article", "From our classics" and the rest
+          ".homepage-intro__featured-tile",
+          // the three items under the "Updates and announcements" heading
+          ".homepage-intro__announcement",
+          // the latest data insight cards, keeping the section's heading and CTA
+          ".latest-data-insights__card",
+        ]
+        for (const selector of editorialItems) {
+          document.querySelectorAll(selector).forEach((item) => item.remove())
+        }
+
         // Force every image that has arrived to finish decoding. Two runs of the energy page
         // differed in 114,000 pixels, all by 10/255 or less - invisible, but enough to mark
         // the file as changed: a progressive image renders coarse then fine, so a capture
