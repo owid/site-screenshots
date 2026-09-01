@@ -163,28 +163,48 @@
             .join(" ")
         }
 
+        // Hidden things never load and never should, so waiting for one would hang every
+        // run on the pages that have them: /life-expectancy carries three chart
+        // placeholders in the inactive slides of a key-insights slider, visibility: hidden
+        // inside a zero-height .slide, and the homepage keeps seven at 0x0. None is in the
+        // screenshot.
+        //
+        // Element.checkVisibility() answers this in one call, but its option names were
+        // renamed between the Chromium this repo pins (113) and current ones, and a call
+        // that throws in here does not reject the promise - it leaves it unsettled until
+        // the 300-second page timeout, so every page would fail. These two primitives are
+        // older than any browser we will run and give the same answers (checked against
+        // checkVisibility on every placeholder and chart of all seven pages): an element in
+        // a display: none subtree has no client rects, whatever its own computed display
+        // says, and visibility inherits, so the element's own value already reflects a
+        // hidden ancestor.
+        function isVisible(element) {
+          return element.getClientRects().length > 0 &&
+                 getComputedStyle(element).visibility === "visible"
+        }
+
+        // Visible is not the same as in the picture. A topic page lays out ~100 chart
+        // thumbnails inside the key-charts carousel's scroller and shows a handful: on
+        // /energy 108 of the 111 images that never load are visible by the test above and
+        // clipped away by an ancestor that scrolls. Anything that waits for images has to
+        // know the difference, or it waits for a hundred pictures nobody will see.
+        function isPainted(element) {
+          if (!isVisible(element)) return false
+          const box = element.getBoundingClientRect()
+          for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            if (style.overflow === "visible" && style.overflowX === "visible" &&
+                style.overflowY === "visible") continue
+            const clip = parent.getBoundingClientRect()
+            if (box.right <= clip.left || box.left >= clip.right ||
+                box.bottom <= clip.top || box.top >= clip.bottom) return false
+          }
+          return true
+        }
+
         // Which charts the page still owes us. Empty means every one of them has drawn
         // something, which is the condition the three signals above cannot express.
         function undrawnCharts() {
-          // A hidden placeholder never loads and never should, so waiting for one would
-          // hang every run on the two pages that have them: /life-expectancy carries three
-          // in the inactive slides of a key-insights slider, visibility: hidden inside a
-          // zero-height .slide, and the homepage keeps seven at 0x0. Neither set is in the
-          // screenshot.
-          //
-          // Element.checkVisibility() answers this in one call, but its option names were
-          // renamed between the Chromium this repo pins (113) and current ones, and a call
-          // that throws in here does not reject the promise - it leaves it unsettled until
-          // the 300-second page timeout, so every page would fail. These two primitives
-          // are older than any browser we will run and give the same answers (checked
-          // against checkVisibility on every placeholder and chart of all seven pages):
-          // an element in a display: none subtree has no client rects, whatever its own
-          // computed display says, and visibility inherits, so the element's own value
-          // already reflects a hidden ancestor.
-          function isVisible(element) {
-            return element.getClientRects().length > 0 &&
-                   getComputedStyle(element).visibility === "visible"
-          }
           function describe(element) {
             const rect = element.getBoundingClientRect()
             return Math.round(rect.width) + "x" + Math.round(rect.height) +
@@ -405,6 +425,99 @@
         ]
         for (const selector of editorialItems) {
           document.querySelectorAll(selector).forEach((item) => item.remove())
+        }
+
+        // The same transient resize also re-runs responsive image selection. 58 of the 66
+        // images on /life-expectancy are a <picture> holding one <source sizes="350px">,
+        // which picks a Cloudflare variant, over an <img> whose own src is a much larger
+        // one; when the viewport collapses, the source stops winning for some of them and
+        // the browser falls back to the <img>. Measured there: image 10 serves w=350 at
+        // 1280px wide, w=1200 at 1x1, and w=350 again afterwards. Both are the same
+        // picture drawn into the same 395x225 box, so the shot is a slightly sharper or
+        // softer version of itself depending on where in that ~175ms window the pixels
+        // were read - 66,596 pixels differing by 1 to 3 of 255, which is the band that
+        // turned up on four unrelated branches at once.
+        //
+        // Deciding it here is the same move the chart-width and innerWidth freezes below
+        // make: keep what the browser chose while the viewport was still the real one.
+        //
+        // Two orderings matter, and both were learned by getting them wrong.
+        //
+        // Within the loop: the <source> elements outrank the <img>, so src has to be set
+        // while they are still there and only then can they go. Dropping them first
+        // re-resolves to the large fallback, which is the state being avoided.
+        //
+        // And this whole block sits before the wait below rather than just before the shot,
+        // because assigning src restarts the load algorithm even when the URL is the one
+        // already displayed. With the pin last, four images on /energy were mid-reload at
+        // the moment the capture ran - painted, with nothing to paint - and recovered about
+        // a second later, which is to say the pin was re-creating the exact race it exists
+        // to remove. The wait absorbs it.
+        //
+        // Only images that have arrived, all the same. currentSrc is set as soon as a source
+        // is selected, long before a lazy image is fetched, and pinning those made three
+        // more images on /life-expectancy load during the capture instead of staying absent
+        // - another 55,736 pixels moved. An image that has not loaded is not in the shot.
+        for (const image of document.images) {
+          if (!image.complete || !image.naturalWidth) continue
+          const chosen = image.currentSrc
+          if (!chosen) continue
+          image.src = chosen
+          image.removeAttribute("srcset")
+          image.removeAttribute("sizes")
+          const picture = image.parentElement
+          if (picture && picture.tagName === "PICTURE") {
+            for (const source of [...picture.querySelectorAll("source")]) source.remove()
+          }
+        }
+
+        // A picture that is in the shot but has not loaded shows its alt text instead, and
+        // whether a given lazy thumbnail got that far varies between runs: /energy's
+        // reference is missing two of them that the branch runs have, which is 21,250 pixels
+        // reported as a changed page on three branches at once.
+        //
+        // Waiting for every unloaded image is what the decode note below says hung the
+        // shot, and rightly - but that counted the carousel's ~100 clipped thumbnails.
+        // Painted and unloaded is a different, much smaller set: zero images on every one of
+        // the seven pages in a healthy run (of /energy's 111 unloaded images, 108 are
+        // clipped and 3 are not visible at all; /life-expectancy 40, 37 clipped; the
+        // homepage 10, 3 visible and none painted). So this costs nothing when nothing is
+        // wrong, and when something is, it is exactly the images the diff would have
+        // complained about.
+        //
+        // loading = "eager" rather than a re-assignment of src: it asks the browser to stop
+        // deferring the fetch it already knows about, without restarting anything.
+        //
+        // It proceeds if they never arrive rather than failing the page. The screenshot then
+        // shows what it shows today, which is a small diff on a thumbnail; failing instead
+        // would take out the master run too, and master's run is the one that produces the
+        // references everything else is compared against.
+        // A round at a time, because an image that arrives carries its own intrinsic size
+        // and the reflow can bring another one out from behind a clip: on /energy the first
+        // round forces 4 and a second round then finds 4 more that were not painted when it
+        // started. Measured there and on the migration explorer, it converges on the round
+        // after the first - 67ms and 42ms of work - so the bound is only a stop against a
+        // page that would otherwise trade layout with itself forever.
+        const IMAGE_WAIT_SECONDS = 20
+        const IMAGE_ROUNDS = 5
+        for (let round = 0; round < IMAGE_ROUNDS; round++) {
+          const pending = [...document.images].filter(
+            (image) => isPainted(image) && !(image.complete && image.naturalWidth)
+          )
+          if (!pending.length) break
+          await Promise.race([
+            Promise.all(
+              pending.map((image) => {
+                image.loading = "eager"
+                return new Promise((done) => {
+                  if (image.complete) return done()
+                  image.addEventListener("load", done, { once: true })
+                  image.addEventListener("error", done, { once: true })
+                })
+              })
+            ),
+            sleep(IMAGE_WAIT_SECONDS * 1000),
+          ])
         }
 
         // Force every image that has arrived to finish decoding. Two runs of the energy page
