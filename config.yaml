@@ -438,6 +438,42 @@
           container.style.flex = "none"
         }
 
+        // The same transient resize also re-runs responsive image selection. 58 of the 66
+        // images on /life-expectancy are a <picture> holding one <source sizes="350px">,
+        // which picks a Cloudflare variant, over an <img> whose own src is a much larger
+        // one; when the viewport collapses, the source stops winning for some of them and
+        // the browser falls back to the <img>. Measured there: image 10 serves w=350 at
+        // 1280px wide, w=1200 at 1x1, and w=350 again afterwards. Both are the same
+        // picture drawn into the same 395x225 box, so the shot is a slightly sharper or
+        // softer version of itself depending on where in that ~175ms window the pixels
+        // were read - 66,596 pixels differing by 1 to 3 of 255, which is the band that
+        // turned up on four unrelated branches at once.
+        //
+        // Deciding it here is the same move as pinning the chart widths above: keep what
+        // the browser chose while the viewport was still the real one. Order matters - the
+        // <source> elements outrank the <img>, so src has to be set while they are still
+        // there, and only then can they go; dropping them first would re-resolve to the
+        // large fallback, which is the state we are trying to avoid. The URL we pin is the
+        // one already fetched and decoded, so nothing is refetched.
+        // Only images that have actually arrived. currentSrc is set as soon as a source is
+        // selected, which happens well before a lazy image is fetched, and assigning src
+        // restarts the load algorithm: pinning those made three more images on
+        // /life-expectancy load during the capture instead of staying absent, which both
+        // moved 55,736 pixels and re-created the race this is meant to remove. An image
+        // that has not loaded is not in the shot, so there is nothing to pin.
+        for (const image of document.images) {
+          if (!image.complete || !image.naturalWidth) continue
+          const chosen = image.currentSrc
+          if (!chosen) continue
+          image.src = chosen
+          image.removeAttribute("srcset")
+          image.removeAttribute("sizes")
+          const picture = image.parentElement
+          if (picture && picture.tagName === "PICTURE") {
+            for (const source of [...picture.querySelectorAll("source")]) source.remove()
+          }
+        }
+
         // Same transient resize reaches grapher's window-resize handler, which drives its
         // mobile layout decisions off window.innerWidth. Frozen values mean the handler
         // reads what it already had, so mobx sees no change and nothing re-renders.
