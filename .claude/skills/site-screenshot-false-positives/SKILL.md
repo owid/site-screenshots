@@ -10,8 +10,33 @@ difference between production and staging rather than by the branch. They are ex
 proportion to their size: a reviewer opens a 94-pixel diff, finds nothing, and trusts the next
 one less.
 
-Most of what follows is method. The catalogue is the part that grows — append to it when you
-resolve a class, including the ones you decide not to fix and why.
+Most of what follows is method. The catalogue is the part that moves.
+
+## Keeping this current
+
+**Update this file in the same PR as the fix.** A class resolved without a row here is a class
+the next session re-derives — that has already happened twice, and it is what this file exists to
+stop. Land the row with the change and the two cannot drift.
+
+What to write down, in rough order of how much it saves later:
+
+- **A resolved class** gets a row in the catalogue: the symptom, the number you measured, and
+  where the fix went. The number is the load-bearing part, because that is what identifies the
+  class the next time it appears.
+- **A theory you disproved** goes under *Disproved*, with the measurement that killed it. These
+  are the expensive ones — the cost of a wrong theory is paid again in full by whoever reasons
+  their way to it a second time, and two of the entries there had already been argued twice
+  before they were written down.
+- **A class you decided not to fix** stays under *Open*, with the reason. "Invisible and rare" is
+  a legitimate reason and worth recording as a decision rather than leaving as an absence.
+- **A method that generalises** goes in *Method*. Not every trick — only what changed how a
+  question got answered.
+
+And delete what stops being true. An entry that turns out to be wrong, or an open class that
+turns out not to be real, comes out rather than sitting there with a hedge attached: a catalogue
+that is short is far cheaper than one that is confidently wrong, because this file gets trusted
+before it gets checked. Move rows between sections as their status changes rather than restating
+them in two places.
 
 ## How the comparison actually works
 
